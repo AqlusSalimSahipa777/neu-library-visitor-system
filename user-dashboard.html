@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEU Library - Visitor Check-in</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container user-bg">
+        <div class="hero-left">
+            <div class="logo-area">
+                <div class="neu-logo">
+                    <span class="logo-icon">🏛️</span>
+                    <span class="logo-text">New Era University</span>
+                </div>
+                <h1>Welcome to<br>NEU Library</h1>
+                <p>Please complete your visit log</p>
+            </div>
+        </div>
+        <div class="form-right">
+            <div class="card-panel" id="checkinPanel">
+                <div class="user-header">
+                    <span id="userNameDisplay"></span>
+                    <div>
+                        <a href="admin-dashboard.html" id="adminLink" style="display:none;" class="btn-admin">📊 Admin Panel</a>
+                        <button id="logoutBtn" class="btn-logout">Logout</button>
+                    </div>
+                </div>
+                <h2>Visitor Check-in</h2>
+                <form id="checkinForm">
+                    <div class="input-group">
+                        <label>Purpose of Visit</label>
+                        <select id="purpose" required>
+                            <option value="">Select purpose</option>
+                            <option>Reading Books</option>
+                            <option>Research / Thesis</option>
+                            <option>Use of Computer</option>
+                            <option>Doing Assignments</option>
+                            <option>Borrowing Books</option>
+                            <option>Group Study</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>College/Department</label>
+                        <input type="text" id="userCollege" readonly>
+                    </div>
+                    <button type="submit" class="btn-primary">Check-in Now</button>
+                </form>
+                <div id="checkinMessage" class="message-area"></div>
+            </div>
+            
+            <div id="successModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <div class="success-card">
+                        <span class="success-icon">✅</span>
+                        <h2>Welcome to the NEU Library!</h2>
+                        <p>Enjoy your stay. Please log out when leaving.</p>
+                        <button id="modalCloseBtn" class="btn-primary">Continue</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/firebase-config.js"></script>
+    <script type="module">
+        import { auth, db } from './js/firebase-config.js';
+        import { signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { doc, getDoc, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        
+        let currentUser = null;
+        let userData = null;
+        
+        const checkinForm = document.getElementById('checkinForm');
+        const checkinMsg = document.getElementById('checkinMessage');
+        const successModal = document.getElementById('successModal');
+        const userNameDisplay = document.getElementById('userNameDisplay');
+        const userCollegeField = document.getElementById('userCollege');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const adminLink = document.getElementById('adminLink');
+        
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+                window.location.href = 'index.html';
+                return;
+            }
+            
+            currentUser = user;
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            if (userDoc.exists()) {
+                userData = userDoc.data();
+                userNameDisplay.textContent = `👋 ${userData.firstName} ${userData.lastName}`;
+                userCollegeField.value = userData.college || 'Not specified';
+                
+                // Show admin link if user is admin (don't redirect)
+                if (userData.role === 'admin') {
+                    if (adminLink) {
+                        adminLink.style.display = 'inline-block';
+                    }
+                }
+            }
+        });
+        
+        checkinForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const purpose = document.getElementById('purpose').value;
+            
+            if (!purpose) {
+                checkinMsg.innerHTML = '<span style="color:#d9534f;">Please select a purpose of visit.</span>';
+                return;
+            }
+            
+            try {
+                await addDoc(collection(db, "visits"), {
+                    userId: currentUser.uid,
+                    userEmail: currentUser.email,
+                    userName: `${userData.firstName} ${userData.lastName}`,
+                    college: userData.college,
+                    program: userData.program,
+                    purpose: purpose,
+                    timestamp: serverTimestamp(),
+                    date: new Date().toISOString()
+                });
+                
+                successModal.style.display = "flex";
+                checkinForm.reset();
+                document.getElementById('purpose').value = "";
+                
+            } catch (error) {
+                console.error(error);
+                checkinMsg.innerHTML = '<span style="color:#d9534f;">Check-in failed. Try again.</span>';
+            }
+        });
+        
+        logoutBtn.addEventListener('click', async () => {
+            await signOut(auth);
+            window.location.href = 'index.html';
+        });
+        
+        const closeModal = () => {
+            successModal.style.display = "none";
+        };
+        
+        document.querySelector('.close').addEventListener('click', closeModal);
+        document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+        window.addEventListener('click', (e) => {
+            if (e.target === successModal) closeModal();
+        });
+    </script>
+</body>
+</html>

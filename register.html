@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEU Library - Register</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="hero-left">
+            <div class="logo-area">
+                <div class="neu-logo">
+                    <span class="logo-icon">📝</span>
+                    <span class="logo-text">New Era University</span>
+                </div>
+                <h1>Create Your<br>Library Account</h1>
+                <p>Register with your institutional email</p>
+            </div>
+        </div>
+        <div class="form-right">
+            <div class="card-panel">
+                <h2>Visitor Registration</h2>
+                <form id="registerForm">
+                    <div class="form-row">
+                        <div class="input-group">
+                            <label>School ID</label>
+                            <input type="text" id="schoolId" placeholder="2024-XXXXX" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="input-group">
+                            <label>First Name</label>
+                            <input type="text" id="firstName" required>
+                        </div>
+                        <div class="input-group">
+                            <label>M.I.</label>
+                            <input type="text" id="middleInitial" placeholder="M" maxlength="2">
+                        </div>
+                        <div class="input-group">
+                            <label>Last Name</label>
+                            <input type="text" id="lastName" required>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label>Email (@neu.edu.ph)</label>
+                        <input type="email" id="email" placeholder="name@neu.edu.ph" required>
+                    </div>
+                    <div class="input-group">
+                        <label>Password</label>
+                        <input type="password" id="password" placeholder="Min. 6 characters" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="input-group">
+                            <label>College/Department</label>
+                            <select id="college" required>
+                                <option value="">Select College</option>
+                                <option>College of Computer Science</option>
+                                <option>College of Nursing</option>
+                                <option>College of Engineering</option>
+                                <option>College of Education</option>
+                                <option>College of Business</option>
+                                <option>College of Arts & Sciences</option>
+                                <option>Faculty/Staff</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>Program/Office</label>
+                            <input type="text" id="program" placeholder="e.g., BSIT, BSN" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary">Register Account</button>
+                </form>
+                <div id="registerMessage" class="message-area"></div>
+                <div class="register-link">
+                    Already have an account? <a href="index.html">Sign In</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/firebase-config.js"></script>
+    <script type="module">
+        import { auth, db } from './js/firebase-config.js';
+        import { createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        
+        const registerForm = document.getElementById('registerForm');
+        const registerMsg = document.getElementById('registerMessage');
+        
+        // Admin emails list
+        const adminEmails = ['aqlussalim.sahipa@neu.edu.ph', 'jcesperanza@neu.edu.ph'];
+        
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const schoolId = document.getElementById('schoolId').value.trim();
+            const firstName = document.getElementById('firstName').value.trim();
+            const middleInitial = document.getElementById('middleInitial').value.trim();
+            const lastName = document.getElementById('lastName').value.trim();
+            const college = document.getElementById('college').value;
+            const program = document.getElementById('program').value.trim();
+            
+            if (!email.endsWith('@neu.edu.ph')) {
+                registerMsg.innerHTML = '<span style="color:#d9534f;">❌ Only @neu.edu.ph emails are allowed.</span>';
+                return;
+            }
+            
+            if (password.length < 6) {
+                registerMsg.innerHTML = '<span style="color:#d9534f;">❌ Password must be at least 6 characters.</span>';
+                return;
+            }
+            
+            registerMsg.innerHTML = '<span style="color:#b87c4f;">⏳ Creating account...</span>';
+            
+            try {
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+                
+                // Determine role
+                const role = adminEmails.includes(email) ? 'admin' : 'user';
+                
+                await setDoc(doc(db, "users", user.uid), {
+                    uid: user.uid,
+                    schoolId: schoolId,
+                    firstName: firstName,
+                    middleInitial: middleInitial,
+                    lastName: lastName,
+                    email: email,
+                    college: college,
+                    program: program,
+                    role: role,
+                    isBlocked: false,
+                    createdAt: new Date().toISOString()
+                });
+                
+                registerMsg.innerHTML = '<span style="color:#5cb85c;">✅ Registration successful! Redirecting to login...</span>';
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 2000);
+                
+            } catch (error) {
+                console.error(error);
+                let errorMsg = 'Registration failed.';
+                if (error.code === 'auth/email-already-in-use') errorMsg = 'Email already registered.';
+                registerMsg.innerHTML = `<span style="color:#d9534f;">❌ ${errorMsg}</span>`;
+            }
+        });
+    </script>
+</body>
+</html>

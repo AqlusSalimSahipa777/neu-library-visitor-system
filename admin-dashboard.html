@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEU Library - Admin Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+    <div class="logo-area">
+        <span class="logo-icon">📊</span>
+        <span>NEU Library Admin</span>
+    </div>
+    <div class="admin-nav">
+        <a href="admin-dashboard.html" class="nav-link active">📈 Dashboard</a>
+        <a href="user-dashboard.html" class="nav-link">🏛️ Kiosk Mode</a>
+    </div>
+    <div class="admin-actions">
+        <span id="adminEmail"></span>
+        <button id="adminLogoutBtn" class="btn-logout">Logout</button>
+    </div>
+</header>
+        
+        <div class="dashboard-main">
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <h3>Total Visitors</h3>
+                    <p id="totalVisitors">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Today</h3>
+                    <p id="todayVisitors">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>This Week</h3>
+                    <p id="weekVisitors">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>This Month</h3>
+                    <p id="monthVisitors">0</p>
+                </div>
+            </div>
+            
+            <div class="filter-section">
+                <div class="date-filters">
+                    <button class="filter-btn active" data-range="today">Today</button>
+                    <button class="filter-btn" data-range="week">This Week</button>
+                    <button class="filter-btn" data-range="month">This Month</button>
+                    <div class="custom-range">
+                        <input type="date" id="startDate">
+                        <span>to</span>
+                        <input type="date" id="endDate">
+                        <button id="applyCustomBtn" class="btn-secondary">Apply</button>
+                    </div>
+                </div>
+                <button id="downloadPdfBtn" class="btn-pdf">📄 Download PDF Report</button>
+            </div>
+            
+            <div class="charts-row">
+                <div class="chart-container">
+                    <canvas id="collegeChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="purposeChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="user-management">
+                <h3>User Management</h3>
+                <div class="search-box">
+                    <input type="text" id="searchUser" placeholder="Search by name or email...">
+                </div>
+                <div id="usersList" class="users-table"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/firebase-config.js"></script>
+    <script type="module">
+        import { auth, db } from './js/firebase-config.js';
+        import { signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { collection, query, where, getDocs, doc, updateDoc, orderBy, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        
+        let collegeChart, purposeChart;
+        let allVisits = [];
+        
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+                window.location.href = 'index.html';
+                return;
+            }
+            
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            if (!userDoc.exists() || userDoc.data().role !== 'admin') {
+                window.location.href = 'user-dashboard.html';
+                return;
+            }
+            
+            document.getElementById('adminEmail').textContent = user.email;
+            loadAllData();
+        });
+        
+        document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
+            await signOut(auth);
+            window.location.href = 'index.html';
+        });
+        
+        async function loadAllData(range = 'today', start = null, end = null) {
+            const visitsRef = collection(db, "visits");
+            let q = query(visitsRef, orderBy("timestamp", "desc"));
+            
+            if (start && end) {
+                q = query(visitsRef, where("date", ">=", start), where("date", "<=", end));
+            }
+            
+            const snapshot = await getDocs(q);
+            allVisits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            updateStats();
+            updateCharts();
+            loadUsers();
+        }
+        
+        function updateStats() {
+            const today = new Date().toDateString();
+            const now = new Date();
+            const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            
+            const todayVisits = allVisits.filter(v => new Date(v.date).toDateString() === today);
+            const weekVisits = allVisits.filter(v => new Date(v.date) >= weekStart);
+            const monthVisits = allVisits.filter(v => new Date(v.date) >= monthStart);
+            
+            document.getElementById('totalVisitors').textContent = allVisits.length;
+            document.getElementById('todayVisitors').textContent = todayVisits.length;
+            document.getElementById('weekVisitors').textContent = weekVisits.length;
+            document.getElementById('monthVisitors').textContent = monthVisits.length;
+        }
+        
+        function updateCharts() {
+            const collegeCounts = {};
+            const purposeCounts = {};
+            
+            allVisits.forEach(visit => {
+                const college = visit.college || 'Other';
+                collegeCounts[college] = (collegeCounts[college] || 0) + 1;
+                
+                const purpose = visit.purpose || 'Other';
+                purposeCounts[purpose] = (purposeCounts[purpose] || 0) + 1;
+            });
+            
+            if (collegeChart) collegeChart.destroy();
+            if (purposeChart) purposeChart.destroy();
+            
+            const ctx1 = document.getElementById('collegeChart').getContext('2d');
+            const ctx2 = document.getElementById('purposeChart').getContext('2d');
+            
+            collegeChart = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(collegeCounts),
+                    datasets: [{ label: 'Visitors by College', data: Object.values(collegeCounts), backgroundColor: '#8B5A2B' }]
+                }
+            });
+            
+            purposeChart = new Chart(ctx2, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(purposeCounts),
+                    datasets: [{ data: Object.values(purposeCounts), backgroundColor: ['#D2B48C', '#A0522D', '#F4A460', '#CD853F'] }]
+                }
+            });
+        }
+        
+        async function loadUsers(searchTerm = '') {
+            const usersRef = collection(db, "users");
+            const snapshot = await getDocs(usersRef);
+            let users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            if (searchTerm) {
+                users = users.filter(u => 
+                    u.firstName?.toLowerCase().includes(searchTerm) || 
+                    u.lastName?.toLowerCase().includes(searchTerm) || 
+                    u.email?.toLowerCase().includes(searchTerm)
+                );
+            }
+            
+            const usersList = document.getElementById('usersList');
+            usersList.innerHTML = users.map(user => `
+                <div class="user-row">
+                    <span>${user.firstName} ${user.lastName} (${user.email})</span>
+                    <span>${user.college || 'N/A'}</span>
+                    <button class="btn-toggle" data-uid="${user.id}" data-blocked="${user.isBlocked}">
+                        ${user.isBlocked ? 'Unblock User' : 'Block User'}
+                    </button>
+                </div>
+            `).join('');
+            
+            document.querySelectorAll('.btn-toggle').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const uid = btn.dataset.uid;
+                    const isBlocked = btn.dataset.blocked === 'true';
+                    await updateDoc(doc(db, "users", uid), { isBlocked: !isBlocked });
+                    loadUsers(searchTerm);
+                });
+            });
+        }
+        
+        document.getElementById('searchUser').addEventListener('input', (e) => {
+            loadUsers(e.target.value.toLowerCase());
+        });
+        
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const range = btn.dataset.range;
+                loadAllData(range);
+            });
+        });
+        
+        document.getElementById('applyCustomBtn').addEventListener('click', () => {
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+            if (start && end) loadAllData('custom', start, end);
+        });
+        
+        document.getElementById('downloadPdfBtn').addEventListener('click', () => {
+            const element = document.querySelector('.dashboard-main');
+            html2pdf().from(element).save('library-report.pdf');
+        });
+        
+        loadAllData();
+    </script>
+</body>
+</html>
